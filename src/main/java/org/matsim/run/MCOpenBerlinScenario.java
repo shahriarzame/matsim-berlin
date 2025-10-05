@@ -18,8 +18,7 @@ import org.matsim.contrib.emissions.utils.EmissionsConfigGroup;
 import org.matsim.contrib.vsp.scoring.RideScoringParamsFromCarParams;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
-import org.matsim.core.config.groups.ReplanningConfigGroup;
-import org.matsim.core.config.groups.VspExperimentalConfigGroup;
+import org.matsim.core.config.groups.*;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.replanning.strategies.DefaultPlanStrategiesModule;
@@ -33,6 +32,9 @@ import org.matsim.simwrapper.SimWrapperConfigGroup;
 import org.matsim.simwrapper.SimWrapperModule;
 import picocli.CommandLine;
 import playground.vsp.scoring.IncomeDependentUtilityOfMoneyPersonScoringParameters;
+// imports — add these
+import org.matsim.core.config.groups.RoutingConfigGroup;
+
 
 import java.util.List;
 
@@ -41,8 +43,8 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 
 	public static final String VERSION = "6.4";
 	public static final String CRS = "EPSG:25832";
-
-	public static final String MICRO_CAR = "micro_car"; /*Added microcar*/
+	// Micro-car mode added
+	public static final String MICRO_CAR = "micro_car";
 
 	//	To decrypt hbefa input files set MATSIM_DECRYPTION_PASSWORD as environment variable. ask VSP for access.
 	private static final String HBEFA_2020_PATH = "https://svn.vsp.tu-berlin.de/repos/public-svn/3507bb3997e5657ab9da76dbedbb13c9b5991d3e/0e73947443d68f95202b71a156b337f7f71604ae/";
@@ -95,14 +97,22 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 
 
 		// Register micro_car as a main (routing) mode
-		var qsim = config.qsim();
-		var mainModes = new java.util.ArrayList<>(qsim.getMainModes());
+		QSimConfigGroup qsim = config.qsim();
+		java.util.List<String> mainModes = new java.util.ArrayList<>(qsim.getMainModes());
 		if (!mainModes.contains(MICRO_CAR)) mainModes.add(MICRO_CAR);
 		qsim.setMainModes(mainModes);
 
+		// --- [MC] route micro_car on the car network (and make it a network mode) ---
+		RoutingConfigGroup rc = config.routing();
+		java.util.List<String> networkModes = new java.util.ArrayList<>(rc.getNetworkModes());
+		if (!networkModes.contains(MICRO_CAR)) networkModes.add(MICRO_CAR);
+		rc.setNetworkModes(networkModes);
+
+
+
 		// Copy scoring params from car
-		var car = config.scoring().getOrCreateModeParams(TransportMode.car);
-		var mc  = config.scoring().getOrCreateModeParams(MICRO_CAR);
+		ScoringConfigGroup.ModeParams car = config.scoring().getOrCreateModeParams(TransportMode.car);
+		ScoringConfigGroup.ModeParams mc = config.scoring().getOrCreateModeParams(MICRO_CAR);
 		mc.setConstant(car.getConstant());
 		mc.setMarginalUtilityOfTraveling(car.getMarginalUtilityOfTraveling());
 		mc.setMarginalUtilityOfDistance(car.getMarginalUtilityOfDistance());
@@ -122,28 +132,28 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 			config.replanning().addStrategySettings(
 				new ReplanningConfigGroup.StrategySettings()
 					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
-					.setWeight(0.15)
-					.setSubpopulation(subpopulation)
+					.setWeight(1.0)
+					.setSubpopulation("person")
 			);
 		}
 
 		config.replanning().addStrategySettings(
 			new ReplanningConfigGroup.StrategySettings()
-				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.TimeAllocationMutator)
-				.setWeight(0.15)
+				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
+				.setWeight(1.0)
 				.setSubpopulation("potMCUser")
 		);
 
-		config.replanning().addStrategySettings(
-			new ReplanningConfigGroup.StrategySettings()
-				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.SubtourModeChoice)
-				.setWeight(0.15)
-				.setSubpopulation("potMCUser")
-		);
+//		config.replanning().addStrategySettings(
+//			new ReplanningConfigGroup.StrategySettings()
+//				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.SubtourModeChoice)
+//				.setWeight(0.15)
+//				.setSubpopulation("potMCUser")
+//		);
 
 //		// [MC] ensure SubtourModeChoice knows micro_car (only if SMC is active)
-		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setModes(List.of("walk", "bike", "pt", "car", MICRO_CAR).toArray(new String[0]));
-		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setChainBasedModes(List.of("bike", "car", MICRO_CAR).toArray(new String[0]));
+//		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setModes(List.of("walk", "bike", "pt", "car", MICRO_CAR).toArray(new String[0]));
+//		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setChainBasedModes(List.of("bike", "car", MICRO_CAR).toArray(new String[0]));
 
 
 		// Need to switch to warning for best score
@@ -167,13 +177,26 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 		return config;
 	}
 
+	// This whole block is new. To add Micro_car to Network
 	@Override
 	protected void prepareScenario(Scenario scenario) {
 
-		// add hbefa link attributes.
+		// existing: add HBEFA link attributes
 		HbefaRoadTypeMapping roadTypeMapping = OsmHbefaMapping.build();
 		roadTypeMapping.addHbefaMappings(scenario.getNetwork());
+
+		// --- make micro_car usable on the car network ---
+		scenario.getNetwork().getLinks().values().forEach(link -> {
+			java.util.Set<String> allowedModes = link.getAllowedModes();
+			if (allowedModes != null && allowedModes.contains(TransportMode.car)) {
+				java.util.Set<String> newModes = new java.util.HashSet<>(allowedModes);
+				newModes.add(MICRO_CAR);
+				link.setAllowedModes(newModes);
+			}
+			// if allowedModes == null: treat as unrestricted; no change needed
+		});
 	}
+
 
 	@Override
 	protected void prepareControler(Controler controler) {
@@ -184,14 +207,6 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 
 		controler.addOverridingModule(new QsimTimingModule());
 
-		// --- [MC] bind routing for micro_car to car equivalents
-		controler.addOverridingModule(new AbstractModule() {
-			@Override
-			public void install() {
-				addTravelTimeBinding(MICRO_CAR).to(networkTravelTime());
-				addTravelDisutilityFactoryBinding(MICRO_CAR).to(carTravelDisutilityFactoryKey());
-			}
-		});
 
 
 		// AdvancedScoring is specific to matsim-berlin!
@@ -230,6 +245,10 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 		public void install() {
 			addTravelTimeBinding(TransportMode.ride).to(networkTravelTime());
 			addTravelDisutilityFactoryBinding(TransportMode.ride).to(carTravelDisutilityFactoryKey());
+
+			// Add micro car to TravelTimeBinding
+			addTravelTimeBinding(MICRO_CAR).to(networkTravelTime());
+			addTravelDisutilityFactoryBinding(MICRO_CAR).to(carTravelDisutilityFactoryKey());
 
 			if (!carOnly) {
 				addTravelTimeBinding("freight").to(Key.get(TravelTime.class, Names.named(TransportMode.truck)));

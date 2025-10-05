@@ -1,0 +1,32 @@
+Options: -c:, --config:[=<String=String>...]
+Overwrite config values (e.g. --config:controler.runId=123)
+--config=<configPath> Path to config file used for the run. Default: input/v6.4/custom_berlin-v6.4.config.xml -h,
+--help Show this help message and exit. -
+--iterations=<iterations> Overwrite number of iterations (if greater than -1). Default: -1
+--output=<output> Overwrite output folder defined by the application
+--plan-selector=<planSelector> Plan selector to use. Default: ChangeExpBeta
+--post-processing=<post> Option for post-processing Default: enabled
+--runId=<runId> Overwrite runId defined by the application -V,
+--version Print version information and exit.
+--yaml=<specs> Path to yaml file with config params to overwrite.
+Sample sizes:
+--10pct Run scenario with 10 pct sample size
+--1pct Run scenario with 1 pct sample size
+--25pct Run scenario with 25 pct sample size
+--3pct Run scenario with 3 pct sample size
+
+Commands: run Run the scenario gui Run the scenario through the MATSim GUI help Display help information about the specified command.
+generate-completion Generate bash/zsh completion script for OpenBerlinScenario.
+
+
+
+--config=/home/shahriar-iqbal-zame/IdeaProjects/matsim-berlin/input/v6.4/custom_berlin-v6.4.config.xml
+--iterations=2
+--output=output/newRun
+
+
+New:
+--config=/home/shahriar-iqbal-zame/IdeaProjects/matsim-berlin/input/v6.4/custom_berlin-v6.4.config.xml
+--iterations=2
+--output=output/newRun2
+--post-processing=disabled
