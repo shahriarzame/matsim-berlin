@@ -221,6 +221,14 @@
 
 		</dependency>
 
+
+		<!-- This is the matsim "parking" contrib: -->
+		<dependency>
+			<groupId>org.matsim.contrib</groupId>
+			<artifactId>parking</artifactId>
+			<version>${matsim.version}</version>
+		</dependency>
+
 		<!-- Non MATSim dependencies -->
 
 		<dependency>

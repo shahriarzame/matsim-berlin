@@ -4,8 +4,11 @@ import com.google.inject.Key;
 import com.google.inject.name.Names;
 import org.matsim.analysis.QsimTimingModule;
 import org.matsim.analysis.personMoney.PersonMoneyEventsAnalysisModule;
+import org.matsim.api.core.v01.Coord;
+import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
+import org.matsim.api.core.v01.population.Person;
 import org.matsim.application.MATSimApplication;
 import org.matsim.application.options.SampleOptions;
 import org.matsim.contrib.bicycle.BicycleConfigGroup;
@@ -15,6 +18,13 @@ import org.matsim.contrib.bicycle.BicycleTravelTime;
 import org.matsim.contrib.emissions.HbefaRoadTypeMapping;
 import org.matsim.contrib.emissions.OsmHbefaMapping;
 import org.matsim.contrib.emissions.utils.EmissionsConfigGroup;
+import org.matsim.contrib.multimodal.router.util.WalkTravelTime;
+import org.matsim.contrib.parking.parkingchoice.PC2.GeneralParkingModule;
+import org.matsim.contrib.parking.parkingchoice.PC2.infrastructure.PC2Parking;
+import org.matsim.contrib.parking.parkingchoice.PC2.infrastructure.PublicParking;
+import org.matsim.contrib.parking.parkingchoice.PC2.scoring.AbstractParkingBetas;
+import org.matsim.contrib.parking.parkingchoice.PC2.scoring.ParkingScoreManager;
+import org.matsim.contrib.parking.parkingchoice.PC2.simulation.ParkingInfrastructureManager;
 import org.matsim.contrib.vsp.scoring.RideScoringParamsFromCarParams;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
@@ -32,14 +42,12 @@ import org.matsim.simwrapper.SimWrapperConfigGroup;
 import org.matsim.simwrapper.SimWrapperModule;
 import picocli.CommandLine;
 import playground.vsp.scoring.IncomeDependentUtilityOfMoneyPersonScoringParameters;
-// imports — add these
-import org.matsim.core.config.groups.RoutingConfigGroup;
-
 
 import java.util.List;
 
-@CommandLine.Command(header = ":: Open Berlin Scenario ::", version = MCOpenBerlinScenario.VERSION, mixinStandardHelpOptions = true, showDefaultValues = true)
-public class MCOpenBerlinScenario extends MATSimApplication {
+
+@CommandLine.Command(header = ":: Open Berlin Scenario ::", version = PMCOpenBerlinScenario.VERSION, mixinStandardHelpOptions = true, showDefaultValues = true)
+public class PMCOpenBerlinScenario extends MATSimApplication {
 
 	public static final String VERSION = "6.4";
 	public static final String CRS = "EPSG:25832";
@@ -61,12 +69,12 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 		defaultValue = DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
 	private String planSelector;
 
-	public MCOpenBerlinScenario() {
+	public PMCOpenBerlinScenario() {
 		super(String.format("input/v%s/berlin-v%s.config.xml", VERSION, VERSION));
 	}
 
 	public static void main(String[] args) {
-		MATSimApplication.run(MCOpenBerlinScenario.class, args);
+		MATSimApplication.run(PMCOpenBerlinScenario.class, args);
 	}
 
 	@Override
@@ -98,13 +106,13 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 
 		// Register micro_car as a main (routing) mode
 		QSimConfigGroup qsim = config.qsim();
-		java.util.List<String> mainModes = new java.util.ArrayList<>(qsim.getMainModes());
+		List<String> mainModes = new java.util.ArrayList<>(qsim.getMainModes());
 		if (!mainModes.contains(MICRO_CAR)) mainModes.add(MICRO_CAR);
 		qsim.setMainModes(mainModes);
 
 		// --- [MC] route micro_car on the car network (and make it a network mode) ---
 		RoutingConfigGroup rc = config.routing();
-		java.util.List<String> networkModes = new java.util.ArrayList<>(rc.getNetworkModes());
+		List<String> networkModes = new java.util.ArrayList<>(rc.getNetworkModes());
 		if (!networkModes.contains(MICRO_CAR)) networkModes.add(MICRO_CAR);
 		rc.setNetworkModes(networkModes);
 
@@ -120,47 +128,40 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 
 
 
-	// Required for all calibration strategies
-		for (String fixed : List.of("freight", "goodsTraffic", "commercialPersonTraffic", "commercialPersonTraffic_service")) {
+		// Required for all calibration strategies
+		for (String subpopulation : List.of("person", "potMCUser", "freight", "goodsTraffic", "commercialPersonTraffic", "commercialPersonTraffic_service")) {
 			config.replanning().addStrategySettings(
 				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.KeepLastSelected)
+					.setStrategyName(planSelector)
 					.setWeight(1.0)
-					.setSubpopulation(fixed)
-			);
-
-		}
-
-
-
-		for (String subpop : List.of("person", "potMCUser")) {
-			config.replanning().addStrategySettings(
-				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
-					.setWeight(1.0)
-					.setSubpopulation(subpop)
+					.setSubpopulation(subpopulation)
 			);
 
 			config.replanning().addStrategySettings(
 				new ReplanningConfigGroup.StrategySettings()
 					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
-					.setWeight(0.5)
-					.setSubpopulation(subpop)
+					.setWeight(1.0)
+					.setSubpopulation("person")
 			);
-
-			config.replanning().addStrategySettings(
-				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.SubtourModeChoice)
-					.setWeight(0.5)
-					.setSubpopulation(subpop)
-			);
-
-			config.replanning().setMaxAgentPlanMemorySize(5);
 		}
 
+		config.replanning().addStrategySettings(
+			new ReplanningConfigGroup.StrategySettings()
+				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
+				.setWeight(1.0)
+				.setSubpopulation("potMCUser")
+		);
+
+//		config.replanning().addStrategySettings(
+//			new ReplanningConfigGroup.StrategySettings()
+//				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.SubtourModeChoice)
+//				.setWeight(0.15)
+//				.setSubpopulation("potMCUser")
+//		);
+
 //		// [MC] ensure SubtourModeChoice knows micro_car (only if SMC is active)
-		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setModes(List.of("car", MICRO_CAR).toArray(new String[0]));
-		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setChainBasedModes(List.of("bike", "car", MICRO_CAR).toArray(new String[0]));
+//		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setModes(List.of("walk", "bike", "pt", "car", MICRO_CAR).toArray(new String[0]));
+//		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setChainBasedModes(List.of("bike", "car", MICRO_CAR).toArray(new String[0]));
 
 
 		// Need to switch to warning for best score
@@ -209,66 +210,128 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 	protected void prepareControler(Controler controler) {
 
 		controler.addOverridingModule(new SimWrapperModule());
-
-		controler.addOverridingModule(new TravelTimeBinding());
-
+		//controler.addOverridingModule(new TravelTimeBinding());
 		controler.addOverridingModule(new QsimTimingModule());
 
 
 
 		// AdvancedScoring is specific to matsim-berlin!
-		if (ConfigUtils.hasModule(controler.getConfig(), AdvancedScoringConfigGroup.class)) {
-			controler.addOverridingModule(new AdvancedScoringModule());
-			controler.getConfig().scoring().setExplainScores(true);
-		} else {
-			// if the above config group is not present we still need income dependent scoring
-			// this implementation also allows for person specific asc
-			controler.addOverridingModule(new AbstractModule() {
-				@Override
-				public void install() {
-					bind(ScoringParametersForPerson.class).to(IncomeDependentUtilityOfMoneyPersonScoringParameters.class).asEagerSingleton();
-				}
-			});
-		}
-		controler.addOverridingModule(new PersonMoneyEventsAnalysisModule());
+//		if (ConfigUtils.hasModule(controler.getConfig(), AdvancedScoringConfigGroup.class)) {
+//			controler.addOverridingModule(new AdvancedScoringModule());
+//			controler.getConfig().scoring().setExplainScores(true);
+//		} else {
+//			// if the above config group is not present we still need income dependent scoring
+//			// this implementation also allows for person specific asc
+//			controler.addOverridingModule(new AbstractModule() {
+//				@Override
+//				public void install() {
+//					bind(ScoringParametersForPerson.class).to(IncomeDependentUtilityOfMoneyPersonScoringParameters.class).asEagerSingleton();
+//				}
+//			});
+//		}
+//		controler.addOverridingModule(new PersonMoneyEventsAnalysisModule());
+
+
+		// --------------------------- PC2 PARKING INTEGRATION (minimal) ---------------------------
+		// 1) Install the general parking module (wires PC2 handlers & listeners)
+
+
+
+		// 2) Create the parking score manager using walk travel time for access/egress
+		ParkingScoreManager parkingScoreManager =
+			new ParkingScoreManager(new WalkTravelTime(controler.getConfig().routing()), controler.getScenario());
+
+		parkingScoreManager.setParkingScoreScalingFactor(1);
+		parkingScoreManager.setParkingBetas(new AbstractParkingBetas() {
+			@Override
+			public double getParkingWalkBeta(Person person, double activityDurationInSeconds) {
+				return 0;
+			}
+
+			@Override
+			public double getParkingCostBeta(Person person) {
+				return 0;
+			}
+		});
+
+
+
+		// We will remove this with csv read parking infra
+		// 3) Create the parking infrastructure manager and register public parkings
+		ParkingInfrastructureManager parkingInfrastructureManager =
+			new ParkingInfrastructureManager(parkingScoreManager, controler.getEvents());
+
+		java.util.LinkedList<PublicParking> publicParkings = new java.util.LinkedList<>();
+		// Example parking near "work"
+		publicParkings.add(new PublicParking(
+			Id.create("workPark", PC2Parking.class),
+			98,
+			new Coord(10_000, 0),
+			new ParkingCostCalculatorExample(1),
+			"park"
+		));
+		// Example parking near "home"
+		publicParkings.add(new PublicParking(
+			Id.create("homePark", PC2Parking.class),
+			98,
+			new Coord(-25_000, 0),
+			new ParkingCostCalculatorExample(0),
+			"park"
+		));
+		parkingInfrastructureManager.setPublicParkings(publicParkings);
+
+
+		//setting up the Parking Module
+		GeneralParkingModule generalParkingModule = new GeneralParkingModule(controler);
+		generalParkingModule.setParkingScoreManager(parkingScoreManager);
+		generalParkingModule.setParkingInfrastructurManager(parkingInfrastructureManager);
+
+		// 4) Ensure event handling is active (GeneralParkingModule wires most pieces; this is safe & explicit)
+		//controler.getEvents().addHandler(parkingInfrastructureManager);
+		// -----------------------------------------------------------------------------------------
 	}
+
+
+
+
+
 
 	/**
 	 * Add travel time bindings for ride and freight modes, which are not actually network modes.
 	 */
-	public static final class TravelTimeBinding extends AbstractModule {
-
-		private final boolean carOnly;
-
-		public TravelTimeBinding() {
-			this.carOnly = false;
-		}
-
-		public TravelTimeBinding(boolean carOnly) {
-			this.carOnly = carOnly;
-		}
-
-		@Override
-		public void install() {
-			addTravelTimeBinding(TransportMode.ride).to(networkTravelTime());
-			addTravelDisutilityFactoryBinding(TransportMode.ride).to(carTravelDisutilityFactoryKey());
-
-			// Add micro car to TravelTimeBinding
-			addTravelTimeBinding(MICRO_CAR).to(networkTravelTime());
-			addTravelDisutilityFactoryBinding(MICRO_CAR).to(carTravelDisutilityFactoryKey());
-
-			if (!carOnly) {
-				addTravelTimeBinding("freight").to(Key.get(TravelTime.class, Names.named(TransportMode.truck)));
-				addTravelDisutilityFactoryBinding("freight").to(Key.get(TravelDisutilityFactory.class, Names.named(TransportMode.truck)));
-
-
-				bind(BicycleLinkSpeedCalculator.class).to(BicycleLinkSpeedCalculatorDefaultImpl.class);
-
-				// Bike should use free speed travel time
-				addTravelTimeBinding(TransportMode.bike).to(BicycleTravelTime.class);
-				addTravelDisutilityFactoryBinding(TransportMode.bike).to(OnlyTimeDependentTravelDisutilityFactory.class);
-			}
-		}
-	}
+//	public static final class TravelTimeBinding extends AbstractModule {
+//
+//		private final boolean carOnly;
+//
+//		public TravelTimeBinding() {
+//			this.carOnly = false;
+//		}
+//
+//		public TravelTimeBinding(boolean carOnly) {
+//			this.carOnly = carOnly;
+//		}
+//
+//		@Override
+//		public void install() {
+//			addTravelTimeBinding(TransportMode.ride).to(networkTravelTime());
+//			addTravelDisutilityFactoryBinding(TransportMode.ride).to(carTravelDisutilityFactoryKey());
+//
+//			// Add micro car to TravelTimeBinding
+//			addTravelTimeBinding(MICRO_CAR).to(networkTravelTime());
+//			addTravelDisutilityFactoryBinding(MICRO_CAR).to(carTravelDisutilityFactoryKey());
+//
+//			if (!carOnly) {
+//				addTravelTimeBinding("freight").to(Key.get(TravelTime.class, Names.named(TransportMode.truck)));
+//				addTravelDisutilityFactoryBinding("freight").to(Key.get(TravelDisutilityFactory.class, Names.named(TransportMode.truck)));
+//
+//
+//				bind(BicycleLinkSpeedCalculator.class).to(BicycleLinkSpeedCalculatorDefaultImpl.class);
+//
+//				// Bike should use free speed travel time
+//				addTravelTimeBinding(TransportMode.bike).to(BicycleTravelTime.class);
+//				addTravelDisutilityFactoryBinding(TransportMode.bike).to(OnlyTimeDependentTravelDisutilityFactory.class);
+//			}
+//		}
+//	}
 
 }
