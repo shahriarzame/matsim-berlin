@@ -228,6 +228,10 @@
 			<artifactId>parking</artifactId>
 			<version>${matsim.version}</version>
 		</dependency>
+		<!-- This is the matsim "ev" contrib: -->
+		<dependency>
+			<groupId>org.matsim.contrib</groupId><artifactId>ev</artifactId><version>${matsim.version}</version>
+		</dependency>
 
 		<!-- Non MATSim dependencies -->
 
