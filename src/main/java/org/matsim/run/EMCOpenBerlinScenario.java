@@ -68,6 +68,21 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 		defaultValue = DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
 	private String planSelector;
 
+
+	// 1) CLI for MC cost params
+	@CommandLine.Option(names = "--mc-constant",
+		description = "Micro-car scoring constant (dimensionless, utility units). Example: -0.68")
+	private Double mcConstant;
+
+	@CommandLine.Option(names = "--mc-mdr",
+		description = "Micro-car monetary distance rate [€/m]. Example: -4.5e-5")
+	private Double mcMonetaryDistanceRate;
+
+	@CommandLine.Option(names = "--mc-daily-const",
+		description = "Micro-car daily monetary constant [€]. Example: -3.02")
+	private Double mcDailyMonetaryConstant;
+
+
 	public EMCOpenBerlinScenario() {
 		super(String.format("input/v%s/berlin-v%s.config.xml", VERSION, VERSION));
 	}
@@ -124,11 +139,15 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 		mc.setMarginalUtilityOfDistance(car.getMarginalUtilityOfDistance());
 
 		// set MC params (constant, mode-specific monetary distance rate, mode-specific daily monetary constant)
-		// set from external (CLI)
-		mc.setConstant(car.getConstant());
-		mc.setMonetaryDistanceRate(car.getMonetaryDistanceRate());
-		mc.setDailyMonetaryConstant(car.getDailyMonetaryConstant());
+		// Defaults (used if CLI options are not provided)
+		double defaultConst       = -0.68;
+		double defaultMdr         = -4.5E-5;
+		double defaultDailyConst  = -3.02;
 
+		// Apply CLI values when present; otherwise fall back to defaults
+		mc.setConstant(mcConstant != null ? mcConstant : defaultConst);
+		mc.setMonetaryDistanceRate(mcMonetaryDistanceRate != null ? mcMonetaryDistanceRate : defaultMdr);
+		mc.setDailyMonetaryConstant(mcDailyMonetaryConstant != null ? mcDailyMonetaryConstant : defaultDailyConst);
 
 
 
