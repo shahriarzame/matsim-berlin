@@ -1,0 +1,4 @@
+--config=/home/shahriar-iqbal-zame/IdeaProjects/matsim-berlin/input/v6.4/custom_berlin-v6.4.config.xml
+--iterations=10
+--output=output/smc_TEST_1
+--post-processing=disabled
