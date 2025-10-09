@@ -30,6 +30,7 @@ import org.matsim.core.config.groups.*;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.mobsim.qsim.components.QSimComponentsConfigGroup;
+import org.matsim.core.replanning.selectors.WorstPlanForRemovalSelector;
 import org.matsim.core.replanning.strategies.DefaultPlanStrategiesModule;
 import org.matsim.core.router.costcalculators.OnlyTimeDependentTravelDisutilityFactory;
 import org.matsim.core.router.costcalculators.TravelDisutilityFactory;
@@ -132,47 +133,69 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 
 
 	// Required for all calibration strategies
-		for (String fixed : List.of("person", "potMCUser", "freight", "goodsTraffic", "commercialPersonTraffic", "commercialPersonTraffic_service")) {
+		for (String fixed : List.of("freight", "goodsTraffic", "commercialPersonTraffic", "commercialPersonTraffic_service")) {
 			config.replanning().addStrategySettings(
 				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
+					.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.KeepLastSelected)
 					.setWeight(1.0)
 					.setSubpopulation(fixed)
 			);
 
-			config.replanning().addStrategySettings(
-				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
-					.setWeight(0.5)
-					.setSubpopulation(fixed)
-			);
+//			config.replanning().addStrategySettings(
+//				new ReplanningConfigGroup.StrategySettings()
+//					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
+//					.setWeight(0.5)
+//					.setSubpopulation(fixed)
+//			);
 
 		}
 
-		// Subtour_modechoice for MC
+
+		// Strategies for Person: Reroute | Select Random (i0 to i50%) > ChangeExpBeta (i50% to i100%) |
+		int totalIterations = config.controller().getLastIteration();
+		int disableAfterIter = (int) (totalIterations * 0.5); // disable after 50%
+
 		config.replanning().addStrategySettings(
 			new ReplanningConfigGroup.StrategySettings()
-				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ChangeTripMode)
+				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
 				.setWeight(0.5)
 				.setSubpopulation("person")
 		);
 
-		ConfigUtils.addOrGetModule(config, ChangeModeConfigGroup.class).setModes(List.of("car", MICRO_CAR).toArray(new String[0]));
-		ConfigUtils.addOrGetModule(config, ChangeModeConfigGroup.class).setBehavior(ChangeModeConfigGroup.Behavior.fromSpecifiedModesToSpecifiedModes);
+		config.replanning().addStrategySettings(
+			new ReplanningConfigGroup.StrategySettings()
+				.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.SelectRandom)
+				.setWeight(0.5)
+				.setSubpopulation("person")
+				.setDisableAfter(disableAfterIter)
+		);
 
+		config.replanning().addStrategySettings(
+			new ReplanningConfigGroup.StrategySettings()
+				.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
+				.setWeight(0.5)
+				.setSubpopulation("person")
+		);
+
+
+		config.replanning().setMaxAgentPlanMemorySize(10);
+		config.replanning().setFractionOfIterationsToDisableInnovation(0.8);
+//		config.replanning().setPlanSelectorForRemoval(WorstPlanForRemovalSelector.class.getName());
 
 
 //		// Subtour_modechoice for MC
 //		config.replanning().addStrategySettings(
 //			new ReplanningConfigGroup.StrategySettings()
-//				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.SubtourModeChoice)
+//				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ChangeTripMode)
 //				.setWeight(0.5)
 //				.setSubpopulation("person")
 //		);
 //
-//		// ensure SubtourModeChoice knows MC
-//		ConfigUtils.addOrGetModule(config, SubtourModeChoiceConfigGroup.class).setModes(List.of("car", MICRO_CAR).toArray(new String[0]));
-//		ConfigUtils.addOrGetModule(config, SubtourModeChoiceConfigGroup.class).setChainBasedModes(List.of("bike", "car", MICRO_CAR).toArray(new String[0]));
+//		ConfigUtils.addOrGetModule(config, ChangeModeConfigGroup.class).setModes(List.of("car", MICRO_CAR).toArray(new String[0]));
+//		ConfigUtils.addOrGetModule(config, ChangeModeConfigGroup.class).setBehavior(ChangeModeConfigGroup.Behavior.fromSpecifiedModesToSpecifiedModes);
+
+
+
 
 
 		// Need to switch to warning for best score
@@ -241,54 +264,20 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 		controler.addOverridingModule(new QsimTimingModule());
 
 
-		// Important: install the EV module
-
-		// Create custom energy consumption factory
-		DriveEnergyConsumption.Factory customConsumptionFactory = new DriveEnergyConsumption.Factory() {
-			@Override
-			public DriveEnergyConsumption create(ElectricVehicle electricVehicle) {
-				// Your custom consumption model implementation
-				return new DriveEnergyConsumption() {
-					@Override
-					public double calcEnergyConsumption(Link link, double travelTime, double linkEnterTime) {
-						// Implement your consumption logic here
-						// This is where you calculate how much energy is consumed when driving on a link
-
-						// Example calculation (replace with your actual model):
-						double distance = link.getLength();
-						double speed = distance / travelTime;
-						double consumptionRate = 0.009; // kWh per km (example value)
-
-						return distance / 1000 * consumptionRate; // Energy in kWh
-					}
-				};
-			}
-		};
-
 		// Add EV module
-		controler.addOverridingModule(new EvModule());
 
+		controler.addOverridingModule( new AbstractModule(){
+			@Override public void install(){
+				install( new EvModule() );
 
-		// Configure EV-specific settings
-		controler.addOverridingModule(new AbstractModule() {
-			@Override
-			public void install() {
-				// Bind your custom consumption factory
-				bind(DriveEnergyConsumption.Factory.class).toInstance(customConsumptionFactory);
-
-				// Add auxiliary consumption (HVAC, electronics, etc.)
-				bind(AuxEnergyConsumption.Factory.class).toInstance(
-					electricVehicle -> (beginTime, duration, linkId) -> {
-						// Return auxiliary energy consumption in kWh
-						return 0.0; // Example: no aux consumption
-					}
-				);
-
-				// Add EV routing that considers charging needs : Only if we consider charging
-//				addRoutingModuleBinding(TransportMode.car).toProvider(
-//					new EvNetworkRoutingProvider(TransportMode.car));
+//				addRoutingModuleBinding( MICRO_CAR ).toProvider(new EvNetworkRoutingProvider(MICRO_CAR) );
+				// a router that inserts charging activities INTO THE ROUTE when the battery is run empty.  This assumes that a full
+				// charge at the start of the route is not sufficient to drive the route.   There are other settings where the
+				// situation is different, e.g. urban, where there may be a CHAIN of activities, and charging in general is done in
+				// parallel with some of these activities.   That second situation is adressed by some "ev" code in the vsp contrib.
+				// kai, dec'22
 			}
-		});
+		} );
 
 
 

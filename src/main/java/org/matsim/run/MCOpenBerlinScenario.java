@@ -110,55 +110,48 @@ public class MCOpenBerlinScenario extends MATSimApplication {
 
 
 
-		// Copy scoring params from car
+		// Copy MC scoring params from car
 		ScoringConfigGroup.ModeParams car = config.scoring().getOrCreateModeParams(TransportMode.car);
 		ScoringConfigGroup.ModeParams mc = config.scoring().getOrCreateModeParams(MICRO_CAR);
-		mc.setConstant(car.getConstant());
 		mc.setMarginalUtilityOfTraveling(car.getMarginalUtilityOfTraveling());
 		mc.setMarginalUtilityOfDistance(car.getMarginalUtilityOfDistance());
+
+		// set MC params (constant, mode-specific monetary distance rate, mode-specific daily monetary constant)
+		// set from external (CLI)
+		mc.setConstant(car.getConstant());
 		mc.setMonetaryDistanceRate(car.getMonetaryDistanceRate());
+		mc.setDailyMonetaryConstant(car.getDailyMonetaryConstant());
+
 
 
 
 	// Required for all calibration strategies
-		for (String fixed : List.of("freight", "goodsTraffic", "commercialPersonTraffic", "commercialPersonTraffic_service")) {
+		for (String fixed : List.of("person", "potMCUser", "freight", "goodsTraffic", "commercialPersonTraffic", "commercialPersonTraffic_service")) {
 			config.replanning().addStrategySettings(
 				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.KeepLastSelected)
+					.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
+					.setWeight(1.0)
+					.setSubpopulation(fixed)
+			);
+
+			config.replanning().addStrategySettings(
+				new ReplanningConfigGroup.StrategySettings()
+					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
 					.setWeight(1.0)
 					.setSubpopulation(fixed)
 			);
 
 		}
 
+		// Subtour_modechoice for MC
+		config.replanning().addStrategySettings(
+			new ReplanningConfigGroup.StrategySettings()
+				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.SubtourModeChoice)
+				.setWeight(0.5)
+				.setSubpopulation("potMCUser")
+		);
 
-
-		for (String subpop : List.of("person", "potMCUser")) {
-			config.replanning().addStrategySettings(
-				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
-					.setWeight(1.0)
-					.setSubpopulation(subpop)
-			);
-
-			config.replanning().addStrategySettings(
-				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
-					.setWeight(0.5)
-					.setSubpopulation(subpop)
-			);
-
-			config.replanning().addStrategySettings(
-				new ReplanningConfigGroup.StrategySettings()
-					.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.SubtourModeChoice)
-					.setWeight(0.5)
-					.setSubpopulation(subpop)
-			);
-
-			config.replanning().setMaxAgentPlanMemorySize(5);
-		}
-
-//		// [MC] ensure SubtourModeChoice knows micro_car (only if SMC is active)
+		// ensure SubtourModeChoice knows MC
 		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setModes(List.of("car", MICRO_CAR).toArray(new String[0]));
 		ConfigUtils.addOrGetModule(config, org.matsim.core.config.groups.SubtourModeChoiceConfigGroup.class).setChainBasedModes(List.of("bike", "car", MICRO_CAR).toArray(new String[0]));
 
