@@ -6,7 +6,6 @@ import org.matsim.analysis.QsimTimingModule;
 import org.matsim.analysis.personMoney.PersonMoneyEventsAnalysisModule;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
-import org.matsim.api.core.v01.network.Link;
 import org.matsim.application.MATSimApplication;
 import org.matsim.application.options.SampleOptions;
 import org.matsim.contrib.bicycle.BicycleConfigGroup;
@@ -18,19 +17,12 @@ import org.matsim.contrib.emissions.OsmHbefaMapping;
 import org.matsim.contrib.emissions.utils.EmissionsConfigGroup;
 import org.matsim.contrib.ev.EvConfigGroup;
 import org.matsim.contrib.ev.EvModule;
-import org.matsim.contrib.ev.discharging.AuxEnergyConsumption;
-import org.matsim.contrib.ev.discharging.DriveEnergyConsumption;
-import org.matsim.contrib.ev.discharging.VehicleTypeSpecificDriveEnergyConsumptionFactory;
-import org.matsim.contrib.ev.fleet.ElectricVehicle;
-import org.matsim.contrib.ev.routing.EvNetworkRoutingProvider;
 import org.matsim.contrib.vsp.scoring.RideScoringParamsFromCarParams;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.*;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
-import org.matsim.core.mobsim.qsim.components.QSimComponentsConfigGroup;
-import org.matsim.core.replanning.selectors.WorstPlanForRemovalSelector;
 import org.matsim.core.replanning.strategies.DefaultPlanStrategiesModule;
 import org.matsim.core.router.costcalculators.OnlyTimeDependentTravelDisutilityFactory;
 import org.matsim.core.router.costcalculators.TravelDisutilityFactory;
@@ -68,6 +60,9 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 		defaultValue = DefaultPlanStrategiesModule.DefaultSelector.ChangeExpBeta)
 	private String planSelector;
 
+	@CommandLine.Option(names = "--lastiter",
+		description = "Total Iterations")
+	private int lastIteration;
 
 	// 1) CLI for MC cost params
 	@CommandLine.Option(names = "--mc-constant",
@@ -111,6 +106,9 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 			config.plans().setInputFile(sample.adjustName(config.plans().getInputFile()));
 		}
 
+		//set last iterations
+		config.controller().setLastIteration(lastIteration);
+
 		config.qsim().setUsingTravelTimeCheckInTeleportation(true);
 
 		// overwrite ride scoring params with values derived from car
@@ -140,18 +138,16 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 
 		// set MC params (constant, mode-specific monetary distance rate, mode-specific daily monetary constant)
 		// Defaults (used if CLI options are not provided)
-		double defaultConst       = -0.68;
-		double defaultMdr         = -4.5E-5;
-		double defaultDailyConst  = -3.02;
+		double defaultConst = -0.68;
+		double defaultMdr = -4.5E-5;
+		double defaultDailyConst = -3.02;
 
 		// Apply CLI values when present; otherwise fall back to defaults
 		mc.setConstant(mcConstant != null ? mcConstant : defaultConst);
 		mc.setMonetaryDistanceRate(mcMonetaryDistanceRate != null ? mcMonetaryDistanceRate : defaultMdr);
 		mc.setDailyMonetaryConstant(mcDailyMonetaryConstant != null ? mcDailyMonetaryConstant : defaultDailyConst);
 
-
-
-	// Required for all calibration strategies
+		// Required for all calibration strategies
 		for (String fixed : List.of("freight", "goodsTraffic", "commercialPersonTraffic", "commercialPersonTraffic_service")) {
 			config.replanning().addStrategySettings(
 				new ReplanningConfigGroup.StrategySettings()
@@ -170,15 +166,17 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 		}
 
 
+
 		// Strategies for Person: Reroute | Select Random (i0 to i50%) > ChangeExpBeta (i50% to i100%) |
-		int totalIterations = config.controller().getLastIteration();
-		int disableAfterIter = (int) (totalIterations * 0.5); // disable after 50%
+		int disableAfterIter50Pct = (int) (lastIteration * 0.5);
+		int disableAfterIter80Pct = (int) (lastIteration * 0.8);
 
 		config.replanning().addStrategySettings(
 			new ReplanningConfigGroup.StrategySettings()
 				.setStrategyName(DefaultPlanStrategiesModule.DefaultStrategy.ReRoute)
 				.setWeight(0.5)
 				.setSubpopulation("person")
+				.setDisableAfter(disableAfterIter80Pct)
 		);
 
 		config.replanning().addStrategySettings(
@@ -186,7 +184,7 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 				.setStrategyName(DefaultPlanStrategiesModule.DefaultSelector.SelectRandom)
 				.setWeight(0.5)
 				.setSubpopulation("person")
-				.setDisableAfter(disableAfterIter)
+				.setDisableAfter(disableAfterIter50Pct)
 		);
 
 		config.replanning().addStrategySettings(
