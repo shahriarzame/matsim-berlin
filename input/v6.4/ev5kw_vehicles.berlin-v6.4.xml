@@ -226,13 +226,13 @@
 
 
     <vehicleType id="micro_car">
-        <capacity seats="0" standingRoomInPersons="0" />
+        <capacity seats="2" standingRoomInPersons="0" />
         <length meter="3.25" />
         <width meter="1.0" />
         <engineInformation>
             <attributes>
                 <attribute name="HbefaTechnology" class="java.lang.String">electricity</attribute>
-                <attribute name="energyCapacityInKWhOrLiters" class="java.lang.Double">5.0</attribute>
+                <attribute name="energyCapacityInKWhOrLiters" class="java.lang.Double">15.0</attribute>
             </attributes>
         </engineInformation>
         <costInformation />

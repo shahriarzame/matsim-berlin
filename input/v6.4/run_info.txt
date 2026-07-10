@@ -1,0 +1,4 @@
+-Xms140g -Xmx140g
+-XX:+UseZGC
+-XX:+AlwaysPreTouch
+-XX:SoftMaxHeapSize=120g

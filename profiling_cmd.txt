@@ -1,0 +1,11 @@
+Identify the target JVM PID
+
+From a terminal: jps -lvm (lists local JVMs with PIDs); or read PID from IntelliJ’s Run console (it prints like PID: 12345 on launch with some runtimes).
+
+Linux (lightweight, live)
+
+Overall CPU & per-thread CPU:
+top -H -p <PID> → press 1 to show cores; %CPU/100 ≈ effective cores.
+
+Process CPU/memory timeline to CSV:
+pidstat -p <PID> 1 -durh > pidstat.log

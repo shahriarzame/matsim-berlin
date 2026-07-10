@@ -195,7 +195,7 @@ public class EMCOpenBerlinScenario extends MATSimApplication {
 		);
 
 
-		config.replanning().setMaxAgentPlanMemorySize(10);
+		config.replanning().setMaxAgentPlanMemorySize(5);
 		config.replanning().setFractionOfIterationsToDisableInnovation(0.8);
 //		config.replanning().setPlanSelectorForRemoval(WorstPlanForRemovalSelector.class.getName());
 
